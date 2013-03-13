@@ -1,0 +1,52 @@
+<html>
+<meta http-equiv="Content-Type" content="text/html" charset="utf-8" />
+<script src="http://code.jquery.com/jquery-1.9.1.min.js" type="text/javascript"></script>
+<script src="jscrf.js" type="text/javascript"></script>
+<body>
+<h2>JSCRF(very tiny linear-chain CRF in JavaScript)</h2>
+
+<h3>set training data</h3>
+
+<form>
+<textarea id="training" cols="30" rows="5" style="font-size: 16pt;">
+x1 c1
+x2 c2
+x3 c1
+x4 c1
+EOS
+</textarea>
+<input id="set-training" name="set-training" type="button" value="set training data" onClick="alert('begin'); setTrainingData($('#training').val());alert('done');" />
+</td>
+
+<hr>
+<input id="learn" name="learn" type="button" value="do learnings" onClick="alert('begin'); learning(); alert('learning done');" />
+<hr>
+
+<h3>test (estimate)</h3>
+
+<textarea id="input" cols="30" rows="10" style="font-size: 16pt;">
+x1
+x2
+x3
+x4
+EOS
+</textarea>
+<input id="button" name="button" type="button" value="input" onClick="predictLabels($('#input').val());" />
+<br>
+
+</form>
+
+<input id="showfeature" type="button" value="show feature table" onClick="$('#feature-table').html(genFeatureTable());" />
+
+<input id="showWeights" type="button" value="show weights table" onClick="$('#weights-table').html(genWeightsTable());" />
+
+<input id="showViterbi" type="button" value="show viterbi table" onClick="$('#viterbi-table').html(genViterbiResultTable());" />
+
+<div id="feature-table"></div>
+
+<div id="weights-table"></div>
+
+<div id="viterbi-table"></div>
+
+</body>
+</html>
