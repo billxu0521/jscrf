@@ -56,11 +56,12 @@ function predictLabels(input)
 	for(i = 0; i < x.length; i++){
 		seqStr += estimatedSeq[i] + ":";
 	}
+	seqStr = seqStr.substr(0, seqStr.length-1);
 	
 	lastPredResult.xlength = x.length;
 	lastPredResult.estimated = estimatedSeq;
 	
-	alert(seqStr);
+	return seqStr;
 }
 
 /**
