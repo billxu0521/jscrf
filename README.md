@@ -23,5 +23,5 @@ These functions show the results as the html table format.
 The BSD 2-Clause License. See LICENSE.md file.
 
 
-Copyright (c) 2013, Masfumi Hamamoto
+Copyright (c) 2013, Masafumi Hamamoto
 All rights reserved.

@@ -3,27 +3,31 @@
  *
  * a Conditional Random Fields program by JavaScript
  *
- * @version 0.0.1-alpha
+ * @version 0.0.1
  * @author Masafumi Hamamoto
  *
  */
 
-var weights = {};
-var epsilon = 0.1; // learning
+/////////////////////// groval variables  /////////////////////////////
 
-// phi is the feature function: phi[f] = 1 (exist) of 0 (not exist)
-var phi = {};
+var __weights;
+var __epsilon = 0.1; // learning weight
 
-var bosObs = "BOS";
-var eosObs = "EOS";
-var bosLabel = "__BOS__";
-var eosLabel = "__EOS__";
+// __phi is the feature function: __phi[f] = 1 (exist) of 0 (not exist)
+var __phi = {};
+var __id2feature = new Array();
 
-var learningDataSet = new Array();
-var labelList = {};
-var labelNum = 0;
+var __bosObs = "__BOS__";
+var __eosObs = "__EOS___";
+var __bosLabel = "__BOSLABEL__";
+var __eosLabel = "__EOSLABEL__";
 
-var lastPredResult = {}; // for genViterbiResultTable
+var __learningDataSet = new Array();
+var __labelList = {};
+var __labelNum = 0;
+var __featureNum = 0;
+
+var __lastPredResult = {}; // for genViterbiResultTable
 
 
 ///////////////////////// prediction /////////////////////////////
@@ -53,15 +57,19 @@ function predictLabels(input)
 	}
 
 	var estimatedSeq = predict(x);
+	__lastPredResult.xlength = x.length;
+	__lastPredResult.estimated = estimatedSeq;
+
+	return estimatedSeq;
+	
+	/*
 	for(i = 0; i < x.length; i++){
 		seqStr += estimatedSeq[i] + ":";
 	}
 	seqStr = seqStr.substr(0, seqStr.length-1);
 	
-	lastPredResult.xlength = x.length;
-	lastPredResult.estimated = estimatedSeq;
-	
 	return seqStr;
+	*/
 }
 
 /**
@@ -76,8 +84,8 @@ function predict(x) {
 	var latticeInfo = makeLattice(x);
 	bosNode = latticeInfo["bosNode"];
 	eosNode = latticeInfo["eosNode"];
-	lastPredResult.bosNode = bosNode;
-	lastPredResult.eosNode = eosNode;
+	__lastPredResult.bosNode = bosNode;
+	__lastPredResult.eosNode = eosNode;
 
 	// viterbi
 	viterbi(bosNode);
@@ -98,19 +106,19 @@ function predict(x) {
 function makeLattice(x) { 
 	var i;
 	var lastNode, newNode, leftNode;
-	var bosNode = makeNode(bosObs, bosLabel, null);
+	var bosNode = makeNode(__bosObs, __bosLabel, null);
 	var leftNode = bosNode;
 	
 	for (i = 0; i < x.length; i++) {
 		lastNode = null;
-		for (label in labelList) {
+		for (label in __labelList) {
 			newNode = makeNode(x[i], label, leftNode);
 			newNode.next = lastNode;
 			lastNode = newNode;
 		}
 		leftNode = lastNode;
 	}
-	eosNode = makeNode(eosObs, eosLabel, leftNode);
+	eosNode = makeNode(__eosObs, __eosLabel, leftNode);
 	
 	return {bosNode: bosNode, eosNode: eosNode};
 }
@@ -123,6 +131,7 @@ function viterbi(bosNode) {
 	var baseNode, node, leftNode;
 	var innerProd, score, maxScore;
 	var transFeature, obsFeature;
+	var feature;
 	
 	bosNode.score = 0;
 	for (baseNode = bosNode.right; baseNode != null; baseNode = baseNode.right) { // move position
@@ -130,9 +139,12 @@ function viterbi(bosNode) {
 			maxScore = -100000000;
 			
 			for (leftNode = node.left; leftNode != null; leftNode = leftNode.next) { // check all left nodes' score
-				transFeature = node.y + ":" + leftNode.y;
-				obsFeature = node.x + "#" + node.y;
-				innerProd = weights[transFeature]*phi[transFeature] + weights[obsFeature]*phi[obsFeature];
+				
+				innerProd = 0;
+				for (feature in getFeature(node, leftNode)) {
+					innerProd += __weights[feature];
+				}
+				
 				score = innerProd + leftNode.score;
 				if(maxScore < score){
 					maxScore = score;
@@ -169,21 +181,19 @@ function setTrainingData(trainingStr) {
 			// skip
 			
 		} else if (line == "EOS") {
-			eosNode = makeNode(eosObs, eosLabel, lastNode);
-			learningDataSet.push({
+			eosNode = makeNode(__eosObs, __eosLabel, lastNode);
+			__learningDataSet.push({
 				bosNode: bosNode,
 				eosNode: eosNode
 			});
 			
-			 // set EOS transition and observation feature
-			phi[eosNode.y + ":" + eosNode.left.y] = 1;
-			phi[eosObs + "#" + eosLabel] = 1;
+			setFeature(eosNode);
 
 			isBOS = true;
 			
 		} else {
 			if (isBOS) { // init bosNode
-				bosNode = makeNode(bosObs, bosLabel, null);
+				bosNode = makeNode(__bosObs, __bosLabel, null);
 				lastNode = bosNode;
 				isBOS = false;
 			}
@@ -194,22 +204,19 @@ function setTrainingData(trainingStr) {
 			newNode = makeNode(x, y, lastNode);
 			lastNode = newNode;
 		
-			if (!labelList[y]) {
-				labelList[y] = 1;
-				labelNum++;
+			if (!__labelList[y]) {
+				__labelList[y] = 1;
+				__labelNum++;
 			}
-		
-			phi[newNode.y + ":" + newNode.left.y] = 1; // transition feature
-			phi[newNode.x + "#" + newNode.y] = 1; // observation feature
+			
+			setFeature(newNode);
 		}
 	}
 	
 	addNodeChain();
 
-	// init weights
-	for (feature in phi) {
-		weights[feature] = 0;
-	}
+	initWeights();
+
 }
 
 /**
@@ -226,14 +233,14 @@ function addNodeChain() {
 	var bosNode;
 	var eosNode;
 	
-	for(dataIdx = 0; dataIdx < learningDataSet.length; dataIdx++){
-		bosNode = learningDataSet[dataIdx]["bosNode"];
-		eosNode = learningDataSet[dataIdx]["eosNode"];
+	for(dataIdx = 0; dataIdx < __learningDataSet.length; dataIdx++){
+		bosNode = __learningDataSet[dataIdx]["bosNode"];
+		eosNode = __learningDataSet[dataIdx]["eosNode"];
 
 		for (node = bosNode.right; node != eosNode; node = node.right) {
 			// get label list except node.y
 			addLabelList = new Array();
-			for (label in labelList) {
+			for (label in __labelList) {
 				if(label != node.y){
 					addLabelList.push(label);
 				}
@@ -250,14 +257,59 @@ function addNodeChain() {
 			
 				lastNode = newNode;
 				
-				// add dummy feature
-				phi[newNode.y + ":" + newNode.left.y] = 1; // transition feature
-				phi[newNode.x + "#" + newNode.y] = 1; // observation feature
-
+				setFeature(newNode); // add dummy feature
 			}
 		}
 	}
 }
+
+/////////////////////////// FEATURE ///////////////////////////////
+
+/**
+ * initialize weight vector
+ */
+function initWeights() {
+	var feature;
+	__weights = new Array(__featureNum);
+	for (feature = 0; feature < __featureNum; feature++) {
+		__weights[feature] = 0;
+	}
+}
+
+/**
+ * set features of given data to the feature table 
+ */
+function setFeature (node) {
+	if(!__phi[node.y + ":" + node.left.y]){ // new transition feature
+		__phi[node.y + ":" + node.left.y] = __featureNum;
+		__id2feature.push(node.y + ":" + node.left.y);
+		__featureNum++;
+	}
+	
+	if(!__phi[node.x + "#" + node.y]){ // new observation feature
+		__phi[node.x + "#" + node.y] = __featureNum;
+		__id2feature.push(node.x + "#" + node.y);
+		__featureNum++;
+	}
+}
+
+/**
+ * get feature ID of given node
+ */
+function getFeature (node, leftNode) {
+	var result = {};
+	
+	if(__phi[node.y + ":" + leftNode.y]){
+		result[__phi[node.y + ":" + leftNode.y]] = 1;
+	}
+	if (__phi[node.x + "#" + node.y]) {
+		result[__phi[node.x + "#" + node.y]] = 1;
+	}
+
+	return result;
+}
+
+
 
 /////////////////////////// LEARNING ///////////////////////////////
 
@@ -269,21 +321,21 @@ function learning() {
 	var feature;
 	var bosNode;
 	var eosNode;
-	var deltaL = {}; // target function
+	var deltaL = new Array(__featureNum); // target function
 	var maxIte = 10; // limit of iteration
 	var oldWeights;
 
 	var iteCount;
 	for (iteCount = 1; iteCount <= maxIte; iteCount++) {
-		oldWeights = weights;
+		oldWeights = __weights;
 		
-		for (feature in phi) {
+		for (feature = 0; feature < __featureNum; feature++) {
 			deltaL[feature] = 0;
 		}
 		
-		for (dataIdx = 0; dataIdx < learningDataSet.length; dataIdx++){
-			bosNode = learningDataSet[dataIdx]["bosNode"];
-			eosNode = learningDataSet[dataIdx]["eosNode"];
+		for (dataIdx = 0; dataIdx < __learningDataSet.length; dataIdx++){
+			bosNode = __learningDataSet[dataIdx]["bosNode"];
+			eosNode = __learningDataSet[dataIdx]["eosNode"];
 	
 			// calc all alpha and beta
 			calcAlpha(eosNode);
@@ -303,14 +355,14 @@ function learning() {
 			var allPhi = calcAllPhi(bosNode);
 
 			// delta_{w}L(w^{old})
-			for (feature in phi) {
+			for (feature = 0; feature < __featureNum; feature++) {
 				deltaL[feature] += allPhi[feature] - allProbPhi[feature];
 			}
 		}
 		
 		// update new weights
-		for (feature in phi) {
-			weights[feature] = oldWeights[feature] + epsilon*deltaL[feature];
+		for (feature = 0; feature < __featureNum; feature++) {
+			__weights[feature] = oldWeights[feature] + __epsilon*deltaL[feature];
 		}
 
 		// chech converged
@@ -318,8 +370,8 @@ function learning() {
 	}
 
 	// test
-//	for (feature in phi) {
-//		alert("feature: " + feature + ", P(Y|X)*phi(X, Y)= " + allProbPhi[feature] + " , deltaL(w): " + deltaL[feature] + ", weights: " + weights[feature]);
+//	for (feature = 0; feature < __featureNum; feature++) {
+//		alert("feature: " + feature + ", P(Y|X)*phi(X, Y)= " + allProbPhi[feature] + " , deltaL(w): " + deltaL[feature] + ", weights: " + __weights[feature]);
 //	}
 
 	
@@ -334,10 +386,10 @@ function calcAllProbPhi(bosNode, Z) {
 	var node;
 	var baseNode;
 	var psi, alpha, beta, prob;
-	var transFeature, observFeature;
-	var allProbPhi = {};
+	var feature;
+	var allProbPhi = new Array();
 
-	for (feature in phi) {
+	for (feature = 0; feature < __featureNum; feature++){
 		allProbPhi[feature] = 0;
 	}
 
@@ -345,16 +397,16 @@ function calcAllProbPhi(bosNode, Z) {
 	for(baseNode = bosNode.right; baseNode != null; baseNode = baseNode.right){ // move t
 		for (node = baseNode; node != null; node = node.next) { // change t's label
 			for (leftNode = node.left; leftNode != null; leftNode = leftNode.next) { // all left (change (t-1)'s label)
-				psi = calcPsi(node.y, leftNode.y, node);
+
+				psi = calcPsi(node, leftNode);
+
 				prob = psi * leftNode.alpha * node.beta / Z;
 				
 				// add prob*phi to allProb
 				// corresponding to each feature
-				transFeature = node.y + ":" + leftNode.y;
-				observFeature = node.x + "#" + node.y;
-
-				allProbPhi[transFeature] += prob*phi[transFeature];
-				allProbPhi[observFeature] += prob*phi[observFeature];
+				for (feature in getFeature(node, leftNode)) {
+					allProbPhi[feature] += prob;
+				}
 			}
 		}
 	}
@@ -369,17 +421,16 @@ function calcAllProbPhi(bosNode, Z) {
 function calcAllPhi(bosNode) {
 	var feature;
 	var node, baseNode;
-	var allPhi = {};
+	var allPhi = new Array(__featureNum);
 	var transFeature, observFeature;
 	
-	for (feature in phi) {
+	for (feature = 0; feature < __featureNum; feature++) {
 		allPhi[feature] = 0;
 	}
 	for (node = bosNode.right; node != null; node = node.right) {
-		transFeature = node.y + ":" + node.left.y;
-		observFeature = node.x + "#" + node.y;
-		allPhi[transFeature] += phi[transFeature];
-		allPhi[observFeature] += phi[observFeature];
+		for (feature in getFeature(node, node.left)) {
+			allPhi[feature] += 1;
+		}
 	}
 	
 	return allPhi;
@@ -418,7 +469,7 @@ function calcAlpha(node) {
 	var leftNode;
 	node.alpha = 0;
 	
-	if(node.x == bosObs && node.y == bosLabel){
+	if(node.x == __bosObs && node.y == __bosLabel){
 		node.alpha = 1;
 	}else{
 		// sum all psi(label,leftLabel)*leftAlpha(leftLabel)
@@ -427,7 +478,8 @@ function calcAlpha(node) {
 				calcAlpha(leftNode);
 			}
 			
-			var psi = calcPsi(node.y, leftNode.y, node);
+			var psi = calcPsi(node, leftNode);
+
 			node.alpha += psi*leftNode.alpha;
 		}
 	}
@@ -440,7 +492,7 @@ function calcBeta(node) {
 	var rightNode;
 	node.beta = 0;
 
-	if(node.x == eosObs && node.y == eosLabel){
+	if(node.x == __eosObs && node.y == __eosLabel){
 		node.beta = 1;
 	}else{
 		// sum all psi(label,rightLabel)*rightBeta(rightLabel)
@@ -448,7 +500,7 @@ function calcBeta(node) {
 			if(rightNode.beta == 0){
 				calcBeta(rightNode);
 			}
-			var psi = calcPsi(rightNode.y, node.y, node.right);
+			var psi = calcPsi(rightNode, node);
 			node.beta += psi*rightNode.beta;
 		}
 	}
@@ -457,18 +509,13 @@ function calcBeta(node) {
 /**
  * psi(y_t, y_{t-1}, X, w) = Math.exp(w * phi(X, y_t, y_{t-1}))
  */ 
-function calcPsi(label, leftLabel, node)
+function calcPsi(node, leftNode)
 {
-	var transFeature = label + ":" + leftLabel;
-	var observFeature = node.x + "#" + node.y;
 	var prod = 0; // product
 	
 	// w * phi(X, y_t, y_t-1)
-	if (phi[transFeature] == 1) {
-		prod += weights[transFeature];
-	}
-	if (phi[observFeature] == 1) {
-		prod += weights[observFeature];
+	for (feature in getFeature(node, leftNode)) {
+		prod += __weights[feature];
 	}
 	
 	return Math.exp(prod);
@@ -482,10 +529,11 @@ function calcPsi(label, leftLabel, node)
  */
 function genFeatureTable() {
 	var html = "<table border='2'>";
+	var feature;
 	
 	html += "<tr><th>feature</th></tr>";
-	for (feature in phi) {
-		html += "<tr><td>" + feature + "</td></tr>";
+	for (feature = 0; feature < __featureNum; feature++) {
+		html += "<tr><td>" + __id2feature[feature] + "</td></tr>";
 	}
 	html += "</table>";
 
@@ -500,8 +548,8 @@ function genWeightsTable() {
 	var feature;
 	
 	html += '<tr><th>feature</th><th>value</th></tr>';
-	for (feature in phi){
-		html += "<tr><td>" + feature + "</td><td>" + weights[feature] + "</td></tr>";
+	for (feature = 0; feature < __featureNum; feature++){
+		html += "<tr><td>" + __id2feature[feature] + "</td><td>" + __weights[feature] + "</td></tr>";
 	}
 	html += "</table>";
 	
@@ -517,10 +565,10 @@ function genViterbiResultTable() {
 	var baseNode;
 
 	// convert lattice to 2D array
-	var colsArray = new Array(lastPredResult.xlength+2);
+	var colsArray = new Array(__lastPredResult.xlength+2);
 	var colIdx = 0, nodeIdx = 0;
 
-	for (baseNode = lastPredResult.bosNode; baseNode != null; baseNode = baseNode.right, colIdx++) {
+	for (baseNode = __lastPredResult.bosNode; baseNode != null; baseNode = baseNode.right, colIdx++) {
 		colsArray[colIdx] = new Array();
 		for (node = baseNode; node != null; node = node.next) {
 			colsArray[colIdx].push(node);
@@ -535,9 +583,9 @@ function genViterbiResultTable() {
 	html += "</tr>";
 
 	// value
-	for (nodeIdx = labelNum-1; 0 <= nodeIdx; nodeIdx--) {
+	for (nodeIdx = __labelNum-1; 0 <= nodeIdx; nodeIdx--) {
 		html += "<tr>";
-		if(nodeIdx == labelNum-1){
+		if(nodeIdx == __labelNum-1){
 			node = colsArray[0][0];
 			html += genNodeInfoTD(node, true);
 		}
@@ -545,7 +593,7 @@ function genViterbiResultTable() {
 			node = colsArray[colIdx][nodeIdx];
 			html += genNodeInfoTD(node);
 		}
-		if(nodeIdx == labelNum-1){
+		if(nodeIdx == __labelNum-1){
 			node = colsArray[colsArray.length-1][0];
 			html += genNodeInfoTD(node, true);
 		}
@@ -561,7 +609,7 @@ function genNodeInfoTD(node, doRowSpan) {
 	var td;
 
 	if(doRowSpan){
-		td = '<td rowspan="' + labelNum + '">';
+		td = '<td rowspan="' + __labelNum + '">';
 	}else{
 		td = "<td>";
 	}
@@ -569,7 +617,7 @@ function genNodeInfoTD(node, doRowSpan) {
 	td += "<tr><td>label</td><td>" + node.y + "</td></tr>";
 	td += "<tr><td>score</td><td>" + node.score + "</td></tr>";
 	if(node.maxLeftNode){
-		td += "<tr><td>leftLabel</td><td>" + node.maxLeftNode.y + "</td></tr>";
+		td += "<tr><td>BestLeftLabel</td><td>" + node.maxLeftNode.y + "</td></tr>";
 	}
 	
 	td += "</table>";
@@ -599,7 +647,8 @@ function printInfo(bosNode) {
 	// P(y3, y2|X)
 	for(node3 = bosNode.right.right.right; node3 != null; node3 = node3.next){
 		for(node2 = node3.left; node2 != null; node2 = node2.next){
-			var psi = calcPsi(node3.y, node2.y, node3);
+			var psi = calcPsi(node3, node2);
+
 			var alpha = node2.alpha;
 			var beta = node3.beta;
 			var prob = psi*alpha*beta/Z;
@@ -614,7 +663,7 @@ function printInfo(bosNode) {
 function calcPsiTest(label, leftLabel, node)
 {
 
-	if (leftLabel == bosLabel) { // psi_1
+	if (leftLabel == __bosLabel) { // psi_1
 		return 1.0;
 	}else if (node.x == "x2") {
 		if(label == "c1"){
@@ -642,7 +691,7 @@ function calcPsiTest(label, leftLabel, node)
 		}else if(label == "c2" && leftLabel == "c2"){
 			return 0.1;
 		}
-	}else if (label == eosLabel){
+	}else if (label == __eosLabel){
 		return 1.0;
 	}
 }
