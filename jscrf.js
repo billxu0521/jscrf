@@ -3,32 +3,44 @@
  *
  * a Conditional Random Fields program by JavaScript
  *
- * @version 0.0.1
+ * @version 0.0.2
  * @author Masafumi Hamamoto
  *
  */
 
-/////////////////////// groval variables  /////////////////////////////
+/////////////////////// constructor ///////////////////////////
+"use strict";
 
-var __weights;
-var __epsilon = 0.1; // learning weight
+function CRF(option)
+{
+  var self = this instanceof CRF
+           ? this
+           : Object.create(CRF.prototype);
+  option = option || {};
 
-// __phi is the feature function: __phi[f] = 1 (exist) of 0 (not exist)
-var __phi = {};
-var __id2feature = new Array();
+  self.weights = [];
+  // phi is the feature function: crf.phi[f] = 1 (exist) of 0 (not exist)
+  self.phi = {};
+  self.id2feature = [];
+  self.learningDataSet = [];
+  self.labelList = {};
+  self.lastPredResult = {}; // for genViterbiResultTable
+  self.labelNum = 0;
+  self.featureNum = 0;
 
-var __bosObs = "__BOS__";
-var __eosObs = "__EOS___";
-var __bosLabel = "__BOSLABEL__";
-var __eosLabel = "__EOSLABEL__";
+  // learning weight
+  if(option.epsilon){
+    if(typeof option.epsilon !== "number" || option.epsilon <= 0){
+      throw "invalid option.epsilon";
+    }else{
+      self.epsilon = option.epsilon;
+    }
+  }else{
+    self.epsilon = 0.1;
+  }
 
-var __learningDataSet = new Array();
-var __labelList = {};
-var __labelNum = 0;
-var __featureNum = 0;
-
-var __lastPredResult = {}; // for genViterbiResultTable
-
+  return self;
+}
 
 ///////////////////////// prediction /////////////////////////////
 
@@ -36,14 +48,13 @@ var __lastPredResult = {}; // for genViterbiResultTable
  * predict input sequence represented by string
  * input string must be separated by \n and each line is assumed as an observation
  */
-function predictLabels(input)
-{
+CRF.prototype.predictLabels = function(input) {
   var lines = input.split(/\n+/);
 	var line;
 	var i;
 	var data;
 	var seqStr = "";
-	var x = new Array(); // observation
+	var x = []; // observation
 	
 	for(i = 0; i < lines.length; i++) {
 		line = lines[i];
@@ -56,42 +67,33 @@ function predictLabels(input)
 		x.push(line);
 	}
 
-	var estimatedSeq = predict(x);
-	__lastPredResult.xlength = x.length;
-	__lastPredResult.estimated = estimatedSeq;
+	var estimatedSeq = this.predict(x);
+	this.lastPredResult.xlength = x.length;
+	this.lastPredResult.estimated = estimatedSeq;
 
 	return estimatedSeq;
-	
-	/*
-	for(i = 0; i < x.length; i++){
-		seqStr += estimatedSeq[i] + ":";
-	}
-	seqStr = seqStr.substr(0, seqStr.length-1);
-	
-	return seqStr;
-	*/
 }
 
 /**
  * predict sequence
  */
-function predict(x) {
+CRF.prototype.predict = function(x) {
 	var bosNode, eosNode;
 	var node;
 	var estimatedSeq;
 	
 	// make lattice
-	var latticeInfo = makeLattice(x);
-	bosNode = latticeInfo["bosNode"];
-	eosNode = latticeInfo["eosNode"];
-	__lastPredResult.bosNode = bosNode;
-	__lastPredResult.eosNode = eosNode;
+	var latticeInfo = this.makeLattice(x);
+	bosNode = latticeInfo.bosNode;
+	eosNode = latticeInfo.eosNode;
+	this.lastPredResult.bosNode = bosNode;
+	this.lastPredResult.eosNode = eosNode;
 
 	// viterbi
-	viterbi(bosNode);
+	this.viterbi(bosNode);
 	
 	// backtrack
-	estimatedSeq = new Array();
+	estimatedSeq = [];
 	for(node = eosNode.maxLeftNode; node != bosNode; node = node.maxLeftNode){
 		estimatedSeq.push(node.y);
 	}
@@ -103,22 +105,24 @@ function predict(x) {
 /**
  * make lattice to estimate
  */
-function makeLattice(x) { 
+CRF.prototype.makeLattice = function(x) { 
 	var i;
 	var lastNode, newNode, leftNode;
-	var bosNode = makeNode(__bosObs, __bosLabel, null);
+	var bosNode = this.createBOSNode();
 	var leftNode = bosNode;
+  var label;
+  var eosNode;
 	
 	for (i = 0; i < x.length; i++) {
 		lastNode = null;
-		for (label in __labelList) {
-			newNode = makeNode(x[i], label, leftNode);
+		for (label in this.labelList) {
+			newNode = new CRFNode(x[i], label, leftNode);
 			newNode.next = lastNode;
 			lastNode = newNode;
 		}
 		leftNode = lastNode;
 	}
-	eosNode = makeNode(__eosObs, __eosLabel, leftNode);
+	eosNode = this.createEOSNode(leftNode);
 	
 	return {bosNode: bosNode, eosNode: eosNode};
 }
@@ -127,7 +131,7 @@ function makeLattice(x) {
 /**
  * do viterbi algorithm: connect from each node to the best left node
  */
-function viterbi(bosNode) {
+CRF.prototype.viterbi = function(bosNode) {
 	var baseNode, node, leftNode;
 	var innerProd, score, maxScore;
 	var transFeature, obsFeature;
@@ -141,8 +145,8 @@ function viterbi(bosNode) {
 			for (leftNode = node.left; leftNode != null; leftNode = leftNode.next) { // check all left nodes' score
 				
 				innerProd = 0;
-				for (feature in getFeature(node, leftNode)) {
-					innerProd += __weights[feature];
+				for (feature in this.getFeature(node, leftNode)) {
+					innerProd += this.weights[feature];
 				}
 				
 				score = innerProd + leftNode.score;
@@ -162,7 +166,7 @@ function viterbi(bosNode) {
 /**
  * parse a string of training data
  */
-function setTrainingData(trainingStr) {
+CRF.prototype.setTrainingData = function(trainingStr) {
 	var lines = trainingStr.split(/\n+/);
 	var line;
 	var newNode;
@@ -181,19 +185,19 @@ function setTrainingData(trainingStr) {
 			// skip
 			
 		} else if (line == "EOS") {
-			eosNode = makeNode(__eosObs, __eosLabel, lastNode);
-			__learningDataSet.push({
+			eosNode = this.createEOSNode(lastNode);
+			this.learningDataSet.push({
 				bosNode: bosNode,
 				eosNode: eosNode
 			});
 			
-			setFeature(eosNode);
+			this.setFeature(eosNode);
 
 			isBOS = true;
 			
 		} else {
 			if (isBOS) { // init bosNode
-				bosNode = makeNode(__bosObs, __bosLabel, null);
+				bosNode = this.createBOSNode();
 				lastNode = bosNode;
 				isBOS = false;
 			}
@@ -201,28 +205,27 @@ function setTrainingData(trainingStr) {
 			tuple = line.split(/\s+/);
 			x = tuple[0];
 			y = tuple[1];
-			newNode = makeNode(x, y, lastNode);
+			newNode = new CRFNode(x, y, lastNode);
 			lastNode = newNode;
 		
-			if (!__labelList[y]) {
-				__labelList[y] = 1;
-				__labelNum++;
+			if (!this.labelList[y]) {
+				this.labelList[y] = 1;
+				this.labelNum++;
 			}
 			
-			setFeature(newNode);
+			this.setFeature(newNode);
 		}
 	}
 	
-	addNodeChain();
+	this.addNodeChain();
 
-	initWeights();
-
+	this.initWeights();
 }
 
 /**
  * add dummy nodes for alpha and beta calcuration
  */
-function addNodeChain() {
+CRF.prototype.addNodeChain = function () {
 	var node;
 	var addLabelList;
 	var i;
@@ -232,15 +235,16 @@ function addNodeChain() {
 	var dataIdx;
 	var bosNode;
 	var eosNode;
+
 	
-	for(dataIdx = 0; dataIdx < __learningDataSet.length; dataIdx++){
-		bosNode = __learningDataSet[dataIdx]["bosNode"];
-		eosNode = __learningDataSet[dataIdx]["eosNode"];
+	for(dataIdx = 0; dataIdx < this.learningDataSet.length; dataIdx++){
+		bosNode = this.learningDataSet[dataIdx].bosNode;
+		eosNode = this.learningDataSet[dataIdx].eosNode;
 
 		for (node = bosNode.right; node != eosNode; node = node.right) {
 			// get label list except node.y
-			addLabelList = new Array();
-			for (label in __labelList) {
+			addLabelList = [];
+			for (label in this.labelList) {
 				if(label != node.y){
 					addLabelList.push(label);
 				}
@@ -250,16 +254,19 @@ function addNodeChain() {
 			lastNode = node;
 			for (i = 0; i < addLabelList.length; i++){
 				label = addLabelList[i];
-				newNode = makeNode(node.x, label);
+				newNode = new CRFNode(node.x, label, null);
 				newNode.left = node.left;
 				newNode.right = node.right;
 				lastNode.next = newNode;
 			
 				lastNode = newNode;
 				
-				setFeature(newNode); // add dummy feature
+				this.setFeature(newNode); // add dummy feature
 			}
 		}
+		
+		// add features between eosNode and lefts
+		this.addEOSFeature(eosNode);
 	}
 }
 
@@ -268,47 +275,61 @@ function addNodeChain() {
 /**
  * initialize weight vector
  */
-function initWeights() {
+CRF.prototype.initWeights = function() {
 	var feature;
-	__weights = new Array(__featureNum);
-	for (feature = 0; feature < __featureNum; feature++) {
-		__weights[feature] = 0;
+	this.weights = [];
+	for (feature = 0; feature < this.featureNum; feature++) {
+		this.weights[feature] = 0;
 	}
 }
 
 /**
  * set features of given data to the feature table 
  */
-function setFeature (node) {
-	if(!__phi[node.y + ":" + node.left.y]){ // new transition feature
-		__phi[node.y + ":" + node.left.y] = __featureNum;
-		__id2feature.push(node.y + ":" + node.left.y);
-		__featureNum++;
+CRF.prototype.setFeature = function(node) {
+	if(!this.phi[node.y + ":" + node.left.y]){ // new transition feature
+		this.phi[node.y + ":" + node.left.y] = this.featureNum;
+		this.id2feature.push(node.y + ":" + node.left.y);
+		this.featureNum++;
 	}
 	
-	if(!__phi[node.x + "#" + node.y]){ // new observation feature
-		__phi[node.x + "#" + node.y] = __featureNum;
-		__id2feature.push(node.x + "#" + node.y);
-		__featureNum++;
+	if(!this.phi[node.x + "#" + node.y]){ // new observation feature
+		this.phi[node.x + "#" + node.y] = this.featureNum;
+		this.id2feature.push(node.x + "#" + node.y);
+		this.featureNum++;
 	}
 }
 
 /**
+ * add transition features between EOS and lefts of EOS
+ */
+CRF.prototype.addEOSFeature = function(eosNode) {
+	var leftNode;
+	for(leftNode = eosNode.left; leftNode != null; leftNode = leftNode.next){
+		if(!this.phi[eosNode.y + ":" + leftNode.y]){
+			this.phi[eosNode.y + ":" + leftNode.y] = this.featureNum;
+			this.id2feature.push(eosNode.y + ":" + leftNode.y);
+			this.featureNum++;
+		}
+	}
+}
+
+
+/**
  * get feature ID of given node
  */
-function getFeature (node, leftNode) {
+CRF.prototype.getFeature = function(node, leftNode) {
 	var result = {};
 	
-	if(__phi[node.y + ":" + leftNode.y]){
-		result[__phi[node.y + ":" + leftNode.y]] = 1;
+	if(this.phi[node.y + ":" + leftNode.y]){
+		result[this.phi[node.y + ":" + leftNode.y]] = 1;
 	}
-	if (__phi[node.x + "#" + node.y]) {
-		result[__phi[node.x + "#" + node.y]] = 1;
+	if (this.phi[node.x + "#" + node.y]) {
+		result[this.phi[node.x + "#" + node.y]] = 1;
 	}
 
 	return result;
 }
-
 
 
 /////////////////////////// LEARNING ///////////////////////////////
@@ -316,30 +337,33 @@ function getFeature (node, leftNode) {
 /**
  * do learning weights
  */
-function learning() {
+CRF.prototype.learning = function() {
 	var node;
 	var feature;
 	var bosNode;
 	var eosNode;
-	var deltaL = new Array(__featureNum); // target function
-	var maxIte = 10; // limit of iteration
+  var dataIdx;
+	var deltaL = []; // target function
+	var maxIte = 1000; // limit of iteration
 	var oldWeights;
+	var threshold = 0.001;
 
 	var iteCount;
 	for (iteCount = 1; iteCount <= maxIte; iteCount++) {
-		oldWeights = __weights;
+		oldWeights = []
 		
-		for (feature = 0; feature < __featureNum; feature++) {
+		for (feature = 0; feature < this.featureNum; feature++) {
 			deltaL[feature] = 0;
+			oldWeights[feature] = this.weights[feature];
 		}
 		
-		for (dataIdx = 0; dataIdx < __learningDataSet.length; dataIdx++){
-			bosNode = __learningDataSet[dataIdx]["bosNode"];
-			eosNode = __learningDataSet[dataIdx]["eosNode"];
+		for (dataIdx = 0; dataIdx < this.learningDataSet.length; dataIdx++){
+			bosNode = this.learningDataSet[dataIdx].bosNode;
+			eosNode = this.learningDataSet[dataIdx].eosNode;
 	
 			// calc all alpha and beta
-			calcAlpha(eosNode);
-			calcBeta(bosNode);
+			eosNode.calcAlpha(this);
+			bosNode.calcBeta(this);
 	
 			// calc Z
 			var Z = 0;
@@ -348,48 +372,55 @@ function learning() {
 			}
 
 			// calc Sum_{Y}(P(Y|X)*phi(X, Y))
-			var allProbPhi = calcAllProbPhi(bosNode, Z);
+			var allProbPhi = this.calcAllProbPhi(bosNode, Z);
 
 			// calc phi(X, Y)
 			// NOTE: Y is a label sequence in the training data
-			var allPhi = calcAllPhi(bosNode);
+			var allPhi = this.calcAllPhi(bosNode);
 
 			// delta_{w}L(w^{old})
-			for (feature = 0; feature < __featureNum; feature++) {
+			for (feature = 0; feature < this.featureNum; feature++) {
 				deltaL[feature] += allPhi[feature] - allProbPhi[feature];
 			}
 		}
 		
 		// update new weights
-		for (feature = 0; feature < __featureNum; feature++) {
-			__weights[feature] = oldWeights[feature] + __epsilon*deltaL[feature];
+		for (feature = 0; feature < this.featureNum; feature++) {
+			this.weights[feature] = oldWeights[feature] + this.epsilon*deltaL[feature];
 		}
 
-		// chech converged
-		// TODO
+		// check converged
+		if(this.diffnorm(oldWeights) < threshold){
+//			alert("final diff norm: " + diffnorm(oldWeights) + ", iteration: " + iteCount);
+			break;
+		}
 	}
-
-	// test
-//	for (feature = 0; feature < __featureNum; feature++) {
-//		alert("feature: " + feature + ", P(Y|X)*phi(X, Y)= " + allProbPhi[feature] + " , deltaL(w): " + deltaL[feature] + ", weights: " + __weights[feature]);
-//	}
-
-	
-//	printInfo(bosNode); // TEST
 }
 
+CRF.prototype.diffnorm = function(oldWeights) {
+	var featureID;
+	var diff;
+	var norm = 0;
+	
+	for (featureID = 0; featureID < this.featureNum; featureID++) {
+		diff = this.weights[featureID] - oldWeights[featureID];
+		norm += diff*diff;
+	}
+
+	return norm;
+}
 
 /**
  * calc Sum_{Y}(P(Y|X)*phi(X, Y))
  */
-function calcAllProbPhi(bosNode, Z) {
+CRF.prototype.calcAllProbPhi = function(bosNode, Z) {
 	var node;
-	var baseNode;
+	var baseNode, leftNode;
 	var psi, alpha, beta, prob;
 	var feature;
-	var allProbPhi = new Array();
+	var allProbPhi = [];
 
-	for (feature = 0; feature < __featureNum; feature++){
+	for (feature = 0; feature < this.featureNum; feature++){
 		allProbPhi[feature] = 0;
 	}
 
@@ -398,13 +429,13 @@ function calcAllProbPhi(bosNode, Z) {
 		for (node = baseNode; node != null; node = node.next) { // change t's label
 			for (leftNode = node.left; leftNode != null; leftNode = leftNode.next) { // all left (change (t-1)'s label)
 
-				psi = calcPsi(node, leftNode);
+				psi = this.calcPsi(node, leftNode);
 
 				prob = psi * leftNode.alpha * node.beta / Z;
 				
 				// add prob*phi to allProb
 				// corresponding to each feature
-				for (feature in getFeature(node, leftNode)) {
+				for (feature in this.getFeature(node, leftNode)) {
 					allProbPhi[feature] += prob;
 				}
 			}
@@ -418,17 +449,17 @@ function calcAllProbPhi(bosNode, Z) {
  * calc phi(X, Y) = Sum_{t}(phi(X, y_t, y_{t-1})
  * NOTE: Y is a label sequence of the training data
  */
-function calcAllPhi(bosNode) {
+CRF.prototype.calcAllPhi = function(bosNode) {
 	var feature;
 	var node, baseNode;
-	var allPhi = new Array(__featureNum);
+	var allPhi = [];
 	var transFeature, observFeature;
 	
-	for (feature = 0; feature < __featureNum; feature++) {
+	for (feature = 0; feature < this.featureNum; feature++) {
 		allPhi[feature] = 0;
 	}
 	for (node = bosNode.right; node != null; node = node.right) {
-		for (feature in getFeature(node, node.left)) {
+		for (feature in this.getFeature(node, node.left)) {
 			allPhi[feature] += 1;
 		}
 	}
@@ -436,104 +467,130 @@ function calcAllPhi(bosNode) {
 	return allPhi;
 } 
 
-
-/////////////////////// NODE FUNCTIONS ////////////////////////
-
-/**
- * make a new node
- */
-function makeNode(x, y, leftNode) {
-	var node = {};
-	
-	node.x = x;
-	node.y = y;
-	node.left = leftNode;
-	node.right = null;
-	node.alpha = 0;
-	node.beta = 0;
-	node.maxLeftNode = null;
-	
-	node.next = null; // pointer to a node whose x is same and y is not same
-	if(leftNode){
-		leftNode.right = node;
-	}
-
-	return node;
-}
-
-
-/**
- * calc given node's alpha value
- */
-function calcAlpha(node) {
-	var leftNode;
-	node.alpha = 0;
-	
-	if(node.x == __bosObs && node.y == __bosLabel){
-		node.alpha = 1;
-	}else{
-		// sum all psi(label,leftLabel)*leftAlpha(leftLabel)
-		for(leftNode = node.left; leftNode != null; leftNode = leftNode.next){
-			if(leftNode.alpha == 0){
-				calcAlpha(leftNode);
-			}
-			
-			var psi = calcPsi(node, leftNode);
-
-			node.alpha += psi*leftNode.alpha;
-		}
-	}
-}
-
-/**
- * calc given node's beta value
- */
-function calcBeta(node) {
-	var rightNode;
-	node.beta = 0;
-
-	if(node.x == __eosObs && node.y == __eosLabel){
-		node.beta = 1;
-	}else{
-		// sum all psi(label,rightLabel)*rightBeta(rightLabel)
-		for(rightNode = node.right; rightNode != null; rightNode = rightNode.next){
-			if(rightNode.beta == 0){
-				calcBeta(rightNode);
-			}
-			var psi = calcPsi(rightNode, node);
-			node.beta += psi*rightNode.beta;
-		}
-	}
-}
-
 /**
  * psi(y_t, y_{t-1}, X, w) = Math.exp(w * phi(X, y_t, y_{t-1}))
  */ 
-function calcPsi(node, leftNode)
+CRF.prototype.calcPsi = function(node, leftNode)
 {
 	var prod = 0; // product
+  var feature;
 	
 	// w * phi(X, y_t, y_t-1)
-	for (feature in getFeature(node, leftNode)) {
-		prod += __weights[feature];
+	for (feature in this.getFeature(node, leftNode)) {
+		prod += this.weights[feature];
 	}
 	
 	return Math.exp(prod);
 }
 
 
+
+/////////////////////// NODE FUNCTIONS ////////////////////////
+
+/**
+ * make a new node
+ */
+function CRFNode(x, y, leftNode) {
+	var self = this instanceof CRFNode
+           ? this
+           : Object.create(CRFNode.prototype);
+	
+	self.x = x; // observed
+	self.y = y; // label
+	self.left = leftNode;
+  self.right = null;
+	self.alpha = 0;
+	self.beta = 0;
+	self.maxLeftNode = null;
+	
+	self.next = null; // pointer to a node whose x is same and y is not same
+	if(typeof leftNode === "object" && leftNode !== null){
+		leftNode.right = self;
+	}
+
+  return self;
+}
+
+CRFNode.prototype.isBOSNode = function(){
+  if(this.x === "__BOS__" && this.y === "__BOSLABEL__" ){
+    return true;
+  }else{
+    return false;
+  }
+}
+
+CRFNode.prototype.isEOSNode = function(){
+  if(this.x === "__EOS__" && this.y === "__EOSLABEL__"){
+    return true;
+  }else{
+    return false;
+  }
+}
+
+CRF.prototype.createBOSNode = function(){
+  return new CRFNode("__BOS__", "__BOSLABEL__", null);
+}
+
+CRF.prototype.createEOSNode = function(left){
+  return new CRFNode("__EOS__", "__EOSLABEL__", left);
+}
+
+
+/**
+ * calc this node's alpha value
+ */
+CRFNode.prototype.calcAlpha = function(crf) {
+	var leftNode;
+	this.alpha = 0;
+	
+	if(this.isBOSNode()){
+		this.alpha = 1;
+	}else{
+		// sum all psi(label,leftLabel)*leftAlpha(leftLabel)
+		for(leftNode = this.left; leftNode != null; leftNode = leftNode.next){
+			if(leftNode.alpha == 0){
+				leftNode.calcAlpha(crf);
+			}
+			
+			var psi = crf.calcPsi(this, leftNode);
+			this.alpha += psi*leftNode.alpha;
+		}
+	}
+}
+
+/**
+ * calc this node's beta value
+ */
+CRFNode.prototype.calcBeta = function(crf) {
+	var rightNode;
+	this.beta = 0;
+
+	if(this.isEOSNode()){
+		this.beta = 1;
+	}else{
+		// sum all psi(label,rightLabel)*rightBeta(rightLabel)
+		for(rightNode = this.right; rightNode !== null; rightNode = rightNode.next){
+			if(rightNode.beta === 0){
+				rightNode.calcBeta(crf);
+			}
+			var psi = crf.calcPsi(rightNode, this);
+			this.beta += psi*rightNode.beta;
+		}
+	}
+}
+
 ///////////////////////// presentation //////////////////////////////
 
 /**
  * test: show all features as a table
  */
-function genFeatureTable() {
+CRF.prototype.genFeatureTable = function() {
 	var html = "<table border='2'>";
 	var feature;
 	
 	html += "<tr><th>feature</th></tr>";
-	for (feature = 0; feature < __featureNum; feature++) {
-		html += "<tr><td>" + __id2feature[feature] + "</td></tr>";
+	for (feature = 0; feature < this.featureNum; feature++) {
+		html += "<tr><td>" + this.id2feature[feature] + "</td></tr>";
 	}
 	html += "</table>";
 
@@ -543,13 +600,13 @@ function genFeatureTable() {
 /**
  * show all feature-weight map as a table
  */
-function genWeightsTable() {
+CRF.prototype.genWeightsTable = function() {
 	var html = '<table class="weight-table" border="2">';
 	var feature;
 	
 	html += '<tr><th>feature</th><th>value</th></tr>';
-	for (feature = 0; feature < __featureNum; feature++){
-		html += "<tr><td>" + __id2feature[feature] + "</td><td>" + __weights[feature] + "</td></tr>";
+	for (feature = 0; feature < this.featureNum; feature++){
+		html += "<tr><td>" + this.id2feature[feature] + "</td><td>" + this.weights[feature] + "</td></tr>";
 	}
 	html += "</table>";
 	
@@ -559,17 +616,17 @@ function genWeightsTable() {
 /**
  * show viterbi algorithm result as a table
  */
-function genViterbiResultTable() {
+CRF.prototype.genViterbiResultTable = function() {
 	var html = '<table class="viterbi-table" border="2">';
 	var node;
 	var baseNode;
 
 	// convert lattice to 2D array
-	var colsArray = new Array(__lastPredResult.xlength+2);
+	var colsArray = [];
 	var colIdx = 0, nodeIdx = 0;
 
-	for (baseNode = __lastPredResult.bosNode; baseNode != null; baseNode = baseNode.right, colIdx++) {
-		colsArray[colIdx] = new Array();
+	for (baseNode = this.lastPredResult.bosNode; baseNode != null; baseNode = baseNode.right, colIdx++) {
+		colsArray[colIdx] = [];
 		for (node = baseNode; node != null; node = node.next) {
 			colsArray[colIdx].push(node);
 		}
@@ -583,19 +640,19 @@ function genViterbiResultTable() {
 	html += "</tr>";
 
 	// value
-	for (nodeIdx = __labelNum-1; 0 <= nodeIdx; nodeIdx--) {
+	for (nodeIdx = this.labelNum-1; 0 <= nodeIdx; nodeIdx--) {
 		html += "<tr>";
-		if(nodeIdx == __labelNum-1){
+		if(nodeIdx == this.labelNum-1){
 			node = colsArray[0][0];
-			html += genNodeInfoTD(node, true);
+			html += this.genNodeInfoTD(node, true);
 		}
 		for (colIdx = 1; colIdx < colsArray.length-1; colIdx++) {
 			node = colsArray[colIdx][nodeIdx];
-			html += genNodeInfoTD(node);
+			html += this.genNodeInfoTD(node);
 		}
-		if(nodeIdx == __labelNum-1){
+		if(nodeIdx == this.labelNum-1){
 			node = colsArray[colsArray.length-1][0];
-			html += genNodeInfoTD(node, true);
+			html += this.genNodeInfoTD(node, true);
 		}
 		html += "</tr>";
 	}
@@ -605,11 +662,11 @@ function genViterbiResultTable() {
 	return html;
 }
 
-function genNodeInfoTD(node, doRowSpan) {
+CRF.prototype.genNodeInfoTD = function(node, doRowSpan) {
 	var td;
 
 	if(doRowSpan){
-		td = '<td rowspan="' + __labelNum + '">';
+		td = '<td rowspan="' + this.labelNum + '">';
 	}else{
 		td = "<td>";
 	}
@@ -626,73 +683,4 @@ function genNodeInfoTD(node, doRowSpan) {
 	return td;
 }
 
-////////////////////////// FOR DEBUG ////////////////////////////////
-
-/*
- * FOR DEBUG: print answer of problems in the book
- */
-function printInfo(bosNode) {
-	var node;
-	var baseNode;
-	var node2, node3; // node of x2 and x3
-
-	for (baseNode = bosNode; baseNode != null; baseNode = baseNode.right){
-		for (node = baseNode; node != null; node = node.next) {
-			alert("node.x: " + node.x + ", node.y=: " + node.y + ", alpha: "+node.alpha+", beta: "+node.beta);
-		}
-	}
-
-	alert("Z = " + Z);
-	
-	// P(y3, y2|X)
-	for(node3 = bosNode.right.right.right; node3 != null; node3 = node3.next){
-		for(node2 = node3.left; node2 != null; node2 = node2.next){
-			var psi = calcPsi(node3, node2);
-
-			var alpha = node2.alpha;
-			var beta = node3.beta;
-			var prob = psi*alpha*beta/Z;
-			alert("P("+node3.y+", "+node2.y+"|X) = " + prob + " = " + psi + " * " + alpha + " * " + beta + " / " + Z);
-		}
-	}
-}
-
-/**
- * return phi in the probrem 5.1 of the book
- */ 
-function calcPsiTest(label, leftLabel, node)
-{
-
-	if (leftLabel == __bosLabel) { // psi_1
-		return 1.0;
-	}else if (node.x == "x2") {
-		if(label == "c1"){
-			if(leftLabel == "c1"){
-				return 0.2;
-			}else if (leftLabel == "c2") {
-				return 0.3;
-			}
-		}else {
-			return 0.1;
-		}
-	}else if (node.x == "x3") {
-		if (label == "c1") {
-			return 0.2;
-		}else {
-			return 0.1;
-		}
-	}else if (node.x == "x4") {
-		if(label == "c1" && leftLabel == "c1"){
-			return 0.3;
-		}else if(label == "c1" && leftLabel == "c2"){
-			return 0.1;
-		}else if(label == "c2" && leftLabel == "c1"){
-			return 0.2;
-		}else if(label == "c2" && leftLabel == "c2"){
-			return 0.1;
-		}
-	}else if (label == __eosLabel){
-		return 1.0;
-	}
-}
 

@@ -7,17 +7,39 @@ This program is a very tiny linear-chain CRF in JavaScript.
 
 [USAGE]
 
-1. Set training data with the function "setTrainingData(trainingStr)".
-"trainingStr" format ... each line has to be "<observation> <label>"
+//
+// create a CRF object 
+//
+var crf = new CRF(); 
 
-2. Do learning with the function "learning()". This function will estimate weights of features.
+//
+// Set training data with the method "setTrainingData(trainingStr)".
+// "trainingStr" format ... each line is "<observation> <label>"
+//
+crf.setTrainingData(trainingStr); 
 
-3. Predict with the function "predictLabels(input)".This function alerts predicted labels.
-"input" format ... each line is assumed to a single observation
-NOTE: all observations to be predict need to be included in the training data
+//
+// Do learning with the method "learning()".
+// This function will estimate weights of features.
+//
+crf.learning();
 
-4. You can show the feature table, weights table, detailed prediction result by the functions "genFeatureTable()", "genWeightsTable()", "genViterbiResultTable()", respectively.
-These functions show the results as the html table format. 
+//
+// Predict with the function "predictLabels(testStr)".
+// This function alerts predicted labels.
+// "testStr" format ... each line is a single observation
+//
+crf.predictLabels(testStr);
+
+//
+// You can show the feature table, weights table, detailed prediction 
+// result by the functions "genFeatureTable()", "genWeightsTable()", 
+// "genViterbiResultTable()", respectively.
+// These functions show the results as the html table format. 
+//
+$('#feature-table').html(crf.genFeatureTable());
+$('#weights-table').html(crf.genWeightsTable());
+$('#viterbi-table').html(crf.genViterbiResultTable());
 
 [LICENSE]
 The BSD 2-Clause License. See LICENSE.md file.
