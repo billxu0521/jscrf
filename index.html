@@ -8,6 +8,45 @@ var crf;
 $(function(){
   crf = new CRF();
 });
+
+function setOptAndLearn() {
+  var opt = {
+    epsilon: Number($('#epsilon').val()),
+    maxIteration: Number($('#maxite').val()),
+    threshold: Number($('#thres').val())
+  };
+
+  // feature
+  var usefeature = {};
+  $('input[name="feature"]').each(function(){
+    if ($(this).is(":checked")) {
+      usefeature[$(this).val()] = true;
+    }
+  });
+  if (Object.keys(usefeature).length === 0) {
+    alert("please select at least one feature pattern");
+    return;
+  }
+
+  opt.usefeature = usefeature;
+
+  crf.setOption(opt);
+  alert('learning begin');
+  crf.setTrainingData($('#training').val());
+  crf.learning();
+  alert('learning done');
+}
+
+function predictAndPrint () {
+  var result = crf.predictLabels($('#input').val());
+  var input = $('#input').val().split(/\n+/);
+  var resultStr = ''; 
+  for(var i = 0; i < result[0].length; i++){
+    resultStr += input[i] + '	' + result[0][i] + '<br>';
+  }
+  $('#pred-result').html('<h4>Estimated Result</h4>' + resultStr); 
+}
+
 </script>
 <body>
 <h2>JSCRF(very tiny linear-chain CRF in JavaScript) DEMO</h2>
@@ -21,13 +60,33 @@ am verb
 a article
 programmer noun
 . mark
-EOS
 </textarea>
-<input id="set-training" name="set-training" type="button" value="set training data" onClick="alert('begin'); crf.setTrainingData($('#training').val());alert('done');" />
-</td>
 
-<hr>
-<input id="learn" name="learn" type="button" value="do learnings" onClick="alert('begin'); crf.learning(); alert('learning done');" />
+<div style="margin-top: 15px; background: #fde;">
+Options
+<ul>
+<li>Epsilon (strength of each iteration): <input id="epsilon" type="text" size="6" value="0.001">
+<li>max iteration: <input id="maxite" type="text" size="3" value="10">
+<li>termination threshold: <input id="thres" type="text" size="6" value="0.0001">
+<li>using feature: 
+  <ul>
+  <li><input type="checkbox" value="U00" name="feature" checked><span style="margin-right: 20px;">U00:%x[0]</span> (current observation)
+  <li><input type="checkbox" value="U01" name="feature" checked><span class="feature" style="margin-right: 20px;">U01:%x[-1]</span> (left observation)
+  <li><input type="checkbox" value="U02" name="feature" checked><span style="margin-right: 20px;">U02:%x[-1]/%x[0]</span> (left and current observation)
+  <li><input type="checkbox" value="U03" name="feature" checked><span style="margin-right: 20px;">U03:%x[-2]</span> (left observation of the left)
+  <li><input type="checkbox" value="U04" name="feature" checked><span style="margin-right: 20px;">U04:%x[-2]/%x[-1]/%x[0]</span> (trigram of the left two observations)
+  <li><input type="checkbox" value="U05" name="feature" checked><span style="margin-right: 20px;">U05:%x[1]</span> (right observation)
+  <li><input type="checkbox" value="U06" name="feature" checked><span style="margin-right: 20px;">U06:%x[0]/%x[1]</span> (current and right observation)
+  <li><input type="checkbox" value="U07" name="feature" checked><span style="margin-right: 20px;">U07:%x[2]</span> (right observation of the right)
+  <li><input type="checkbox" value="U08" name="feature" checked><span style="margin-right: 20px;">U08:%x[0]/%x[1]/%x[2]</span> (trigram of the right two observations)
+  <li><input type="checkbox" value="U09" name="feature" checked><span style="margin-right: 20px;">U09:%x[-1]/%x[0]/%x[1]</span> (trigram around the current observation)
+  <li><input type="checkbox" value="T" name="feature"><span style="margin-right: 20px;">T:%y[-1]</span> (left estimated label ... use transition feature)
+  </ul>
+</ul>
+</div>
+
+<input id="learn" name="learn" type="button" value="do learnings" onClick="setOptAndLearn();" />
+
 <hr>
 
 <h3>test (estimate)</h3>
@@ -38,9 +97,10 @@ was
 a
 student
 .
-EOS
+
 </textarea>
-<input id="button" name="button" type="button" value="input" onClick="var result = crf.predictLabels($('#input').val()); var input = $('#input').val().split(/\n+/); var resultStr = ''; for(var i = 0; i < result.length; i++){ resultStr += input[i] + '	' + result[i] + '<br>'; }; $('#pred-result').html('<h4>Estimated Result</h4>' + resultStr); " />
+<p>
+<input id="button" name="button" type="button" value="Estimate!" onClick="predictAndPrint();" />
 <br>
 
 <div id="pred-result">
@@ -48,11 +108,15 @@ EOS
 
 </form>
 
-<input id="showfeature" type="button" value="show feature table" onClick="$('#feature-table').html(crf.genFeatureTable());" />
+<hr>
 
-<input id="showWeights" type="button" value="show weights table" onClick="$('#weights-table').html(crf.genWeightsTable());" />
+<h4>inner parameters</h4>
 
-<input id="showViterbi" type="button" value="show viterbi table" onClick="$('#viterbi-table').html(crf.genViterbiResultTable());" />
+<input id="showfeature" type="button" value="feature table" onClick="$('#feature-table').html(crf.genFeatureTable());" />
+
+<input id="showWeights" type="button" value="weights table" onClick="$('#weights-table').html(crf.genWeightsTable());" />
+
+<input id="showViterbi" type="button" value="viterbi table in the estimation" onClick="$('#viterbi-table').html(crf.genViterbiResultTable());" />
 
 <div id="feature-table"></div>
 
